@@ -1,0 +1,4 @@
+/target
+repos/
+*.ini
+!config.sample.ini
