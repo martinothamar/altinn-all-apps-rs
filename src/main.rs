@@ -32,16 +32,26 @@ async fn main() -> Result<()> {
     init(config).await?;
 
     println!("Cloning into: {}", config.dir.display());
-    println!("--------------------------------------------------");
 
     let gitea_client = GiteaClient::new(config);
     let cdn_client = CdnClient::new();
 
-    let orgs = cdn_client.get_orgs().await?;
+    // let orgs = cdn_client.get_orgs().await?;
+    let orgs = gitea_client.get_orgs().await?;
 
-    let repos = gitea_client.get_repos("ttd").await?;
+    let mut repos = Vec::with_capacity(32);
 
-    let cpus_to_use = num_cpus::get().min(8);
+    for org in orgs.iter() {
+        let name = org.name.clone().context("All orgs should have a name")?;
+        let org_repos = gitea_client.get_repos(&name).await?;
+        repos.extend(org_repos);
+    }
+
+    println!("Number of orgs: {}", orgs.len());
+    println!("Number of repos: {}", repos.len());
+    println!("--------------------------------------------------");
+
+    let cpus_to_use = num_cpus::get().min(4);
 
     let (mut tx, rx) = spmc::channel::<GiteaRepo>();
 
@@ -74,6 +84,7 @@ async fn main() -> Result<()> {
 
     ui_thread.await.context("Failed to wait for UI thread")?;
 
+    print!("\n");
     println!("--------------------------------------------------");
     println!("Cloned {} repos", repo_count);
 
@@ -136,9 +147,9 @@ fn thread(id: usize, rx: Receiver<GiteaRepo>, config: &Configuration, ui: Ui) ->
         }
         count += 1;
 
-        if count == 4 {
-            break;
-        }
+        // if count == 1 {
+        //     break;
+        // }
     }
 
     count
