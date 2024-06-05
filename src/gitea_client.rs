@@ -29,77 +29,108 @@ impl GiteaClient {
     }
 
     pub async fn get_orgs(&self) -> Result<Vec<GiteaOrganization>> {
-        let mut url = self
-            .configuration
-            .base_url
-            .join("/repos/api/v1/orgs")
-            .context("Failed to build URL")?;
-        url.query_pairs_mut()
-            .append_pair("page", "1")
-            .append_pair("limit", "1000");
+        let mut result = Vec::<GiteaOrganization>::new();
 
-        let response = self.client.get(url).send().await;
+        let mut page = 1;
+        const PAGE_SIZE: usize = 50;
 
-        let response = response.context("Failed to fetch orgs - send request")?;
+        loop {
+            let mut url = self
+                .configuration
+                .base_url
+                .join("/repos/api/v1/orgs")
+                .context("Failed to build URL")?;
+            url.query_pairs_mut()
+                .append_pair("page", &page.to_string())
+                .append_pair("limit", &PAGE_SIZE.to_string());
 
-        let status = response.status();
-        let body = response
-            .text()
-            .await
-            .context("Failed to fetch orgs - reading body of request")?;
+            let response = self.client.get(url).send().await;
 
-        if !status.is_success() {
-            bail!(
-                "Failed to fetch orgs - invalid status - status={} content={}",
-                status,
-                body
-            );
+            let response = response.context("Failed to fetch orgs - send request")?;
+
+            let status = response.status();
+            let body = response
+                .text()
+                .await
+                .context("Failed to fetch orgs - reading body of request")?;
+
+            if !status.is_success() {
+                bail!(
+                    "Failed to fetch orgs - invalid status - status={} content={}",
+                    status,
+                    body
+                );
+            }
+
+            let response = serde_json::from_str::<Vec<GiteaOrganization>>(&body)
+                .map_err(|err| anyhow!("Failed to parse orgs: {:?}\nBody={}", err, body))?;
+
+            result.extend_from_slice(&response);
+
+            if response.len() < PAGE_SIZE {
+                break;
+            }
+
+            page += 1;
         }
 
-        let mut response = serde_json::from_str::<Vec<GiteaOrganization>>(&body)
-            .map_err(|err| anyhow!("Failed to parse orgs: {:?}\nBody={}", err, body))?;
+        result.dedup_by(|a, b| a.name == b.name);
+        result.sort_by(|a, b| a.name.cmp(&b.name));
 
-        response.dedup_by(|a, b| a.name == b.name);
-        response.sort_by(|a, b| a.name.cmp(&b.name));
-
-        Ok(response)
+        Ok(result)
     }
 
     pub async fn get_repos(&self, org: &str) -> Result<Vec<GiteaRepo>> {
-        let mut url = self
-            .configuration
-            .base_url
-            .join(&format!("/repos/api/v1/orgs/{}/repos", org))
-            .context("Failed to build URL")?;
-        url.query_pairs_mut()
-            .append_pair("page", "1")
-            .append_pair("limit", "1000");
+        let mut result = Vec::<GiteaRepo>::new();
 
-        let response = self.client.get(url).send().await;
+        let mut page = 1;
+        const PAGE_SIZE: usize = 50;
 
-        let response = response.context("Failed to fetch repos - send request")?;
+        loop {
+            let mut url = self
+                .configuration
+                .base_url
+                .join(&format!("/repos/api/v1/orgs/{}/repos", org))
+                .context("Failed to build URL")?;
 
-        let status = response.status();
-        let body = response
-            .text()
-            .await
-            .context("Failed to fetch repos - reading body of request")?;
+            url.query_pairs_mut()
+                .append_pair("page", &page.to_string())
+                .append_pair("limit", &PAGE_SIZE.to_string());
 
-        if !status.is_success() {
-            bail!(
-                "Failed to fetch repos - invalid status - status={} content={}",
-                status,
-                body
-            );
+            let response = self.client.get(url).send().await;
+
+            let response = response.context("Failed to fetch repos - send request")?;
+
+            let status = response.status();
+            let body = response
+                .text()
+                .await
+                .context("Failed to fetch repos - reading body of request")?;
+
+            if !status.is_success() {
+                bail!(
+                    "Failed to fetch repos - invalid status - status={} content={}",
+                    status,
+                    body
+                );
+            }
+
+            let response = serde_json::from_str::<Vec<GiteaRepo>>(&body)
+                .map_err(|err| anyhow!("Failed to parse repos: {:?}\nBody={}", err, body))?;
+
+            result.extend_from_slice(&response);
+
+            if response.len() < PAGE_SIZE {
+                break;
+            }
+
+            page += 1;
         }
 
-        let mut response = serde_json::from_str::<Vec<GiteaRepo>>(&body)
-            .map_err(|err| anyhow!("Failed to parse repos: {:?}\nBody={}", err, body))?;
+        result.dedup_by(|a, b| a.clone_url == b.clone_url);
+        result.sort_by(|a, b| a.clone_url.cmp(&b.clone_url));
 
-        response.dedup_by(|a, b| a.clone_url == b.clone_url);
-        response.sort_by(|a, b| a.clone_url.cmp(&b.clone_url));
-
-        Ok(response)
+        Ok(result)
     }
 }
 
